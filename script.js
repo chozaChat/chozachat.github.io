@@ -137,7 +137,7 @@ function setupEventListeners() {
       if (searchTerm.length > 0) {
 
         const filteredUsers = DATABASE.users.filter((user) =>
-          user.name.toLowerCase().includes(searchTer && user.id !== currentUser?.id));
+          user.name.toLowerCase().includes(searchTerm));
 
         filteredUsers.forEach((user) => {
           const userDiv = document.createElement("div");
