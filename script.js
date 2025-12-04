@@ -1,9 +1,9 @@
 // Client-side ChatFlow Application
 
-const API_URL = "https://meap-chat.netlify.app/.netlify/functions";
+const API_URL = "https://meapdev.github.io/api/functions";
 
 // Friend requests system
-let friendRequests = null;
+let friendRequests = JSON.parse(localStorage.getItem('friendRequests')) || [];
 
 // MongoDB Database Functions
 const DATABASE = {
@@ -135,18 +135,9 @@ function setupEventListeners() {
       searchResults.innerHTML = "";
 
       if (searchTerm.length > 0) {
-        // Simulate finding users
-        const mockUsers = [
-          { id: 1, name: "Ivan Petrov" },
-          { id: 2, name: "Maria Sidorova" },
-          { id: 3, name: "Alexey Ivanov" },
-          { id: 4, name: "Elena Kuznetsova" },
-          { id: 5, name: "Dmitry Smirnov" }
-        ];
 
-        const filteredUsers = mockUsers.filter((user) =>
-          user.name.toLowerCase().includes(searchTerm)
-        );
+        const filteredUsers = DATABASE.users.filter((user) =>
+          user.name.toLowerCase().includes(searchTer && user.id !== currentUser?.id));
 
         filteredUsers.forEach((user) => {
           const userDiv = document.createElement("div");
@@ -466,6 +457,9 @@ function addFriendToList(userId, userName) {
   searchResults.innerHTML = "";
   document.getElementById("searchUsersInput").value = "";
   alert(userName + " has been added to your friends!");
+
+    // Send friend request to the user
+    sendFriendRequest(currentUser.id, userId);
 }
 
 // Remove friend function
@@ -486,6 +480,8 @@ function sendFriendRequest(fromUser, toUser) {
   friendRequests.push(request);
   displayPendingRequests();
   alert(`Friend request sent to ${toUser}!`);
+      // Save friend requests to localStorage
+    localStorage.setItem('friendRequests', JSON.stringify(friendRequests));
 }
 
 // Display pending requests
