@@ -154,14 +154,15 @@ function setupEventListeners() {
 }
 
 // Auth functions
-function handleLogin() {
+async function handleLogin() {
   const username = document.getElementById("loginUsername").value.trim();
   const password = document.getElementById("loginPassword").value.trim();
 
   if (!username || !password) {
     return;
   }
-  const users = JSON.parse(localStorage.getItem("users") || "[]");
+  const response = await fetch(API_URL + "/users"); const users = response.ok ? await response.json() : [];
+
   const user = users.find((u) => u.username === username);
 
   if (!user) {
@@ -180,7 +181,7 @@ function handleLogin() {
   initSocket();
 }
 
-function handleRegister() {
+async function handleRegister() {
   const username = document.getElementById("regUsername").value.trim();
   const email = document.getElementById("regEmail").value.trim();
   const password = document.getElementById("regPassword").value.trim();
@@ -196,7 +197,8 @@ function handleRegister() {
     return;
   }
 
-  const users = JSON.parse(localStorage.getItem("users") || "[]");
+  const response = await fetch(API_URL + "/users"); const users = response.ok ? await response.json() : [];
+
   if (users.some((u) => u.username === username)) {
     showError("registerError", "Username already exists");
     return;
@@ -209,8 +211,12 @@ function handleRegister() {
     password
   };
 
-  users.push(newUser);
-  localStorage.setItem("users", JSON.stringify(users));
+  await fetch(API_URL + "/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newUser)
+    });
+    
 
   currentUser = { id: newUser.id, username: newUser.username };
   saveUserSession();
