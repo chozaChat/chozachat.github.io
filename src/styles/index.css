@@ -1,3 +1,10 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* Если хочешь, чтобы фон из Figma был на всю страницу */
+  background-color: #f8fafc; /* замени на свой цвет или градиент */
+}

@@ -2,3 +2,5 @@
 @source '../**/*.{js,ts,jsx,tsx}';
 
 @import 'tw-animate-css';
+<div class="min-h-screen flex items-center justify-center bg-gray-100"> 
+</div>
