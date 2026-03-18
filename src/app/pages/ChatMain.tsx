@@ -62,12 +62,56 @@ export default function ChatMain() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollIntervalRef = useRef<number>();
 
-  const accessToken = localStorage.getItem("accessToken");
+  const [accessToken, setAccessToken] = useState<string | null>(localStorage.getItem("accessToken"));
   const userId = localStorage.getItem("userId");
+  
+  const supabase = createClient(
+    `https://${projectId}.supabase.co`,
+    publicAnonKey
+  );
+
+  // Refresh access token periodically
+  useEffect(() => {
+    const refreshToken = async () => {
+      console.log("Attempting to refresh token...");
+      const { data: { session }, error } = await supabase.auth.getSession();
+      console.log("Session data:", session ? "Session exists" : "No session", "Error:", error);
+      console.log("Access token from session:", session?.access_token ? session.access_token.substring(0, 20) + "..." : "None");
+      console.log("Access token from localStorage:", localStorage.getItem("accessToken")?.substring(0, 20) + "...");
+      
+      if (session?.access_token) {
+        setAccessToken(session.access_token);
+        localStorage.setItem("accessToken", session.access_token);
+        console.log("Token refreshed successfully");
+      } else if (error) {
+        console.error("Session refresh error:", error);
+        // Token might be expired, redirect to login
+        toast.error("Session expired. Please login again.");
+        navigate("/");
+      } else {
+        console.log("No session found, using localStorage token");
+        // Try using the token from localStorage
+        const storedToken = localStorage.getItem("accessToken");
+        if (storedToken) {
+          setAccessToken(storedToken);
+        } else {
+          console.error("No token available");
+          navigate("/");
+        }
+      }
+    };
+    
+    // Refresh immediately
+    refreshToken();
+    
+    // Refresh every 5 minutes
+    const interval = setInterval(refreshToken, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!accessToken || !userId) {
-      navigate("/");
       return;
     }
 
@@ -81,6 +125,8 @@ export default function ChatMain() {
       if (selectedChat) {
         loadMessages(selectedChat.type, selectedChat.id);
       }
+      // Also poll for friend requests
+      loadFriendRequests();
     }, 2000);
 
     return () => {
@@ -192,12 +238,14 @@ export default function ChatMain() {
       );
 
       const data = await response.json();
+      console.log("Add friend response:", response.status, data);
+      
       if (!response.ok) {
         toast.error(data.error || "Failed to add friend");
         return;
       }
 
-      toast.success("Friend added successfully!");
+      toast.success("Friend request sent successfully!");
       setFriendEmail("");
       setAddFriendOpen(false);
       loadFriends();
@@ -274,10 +322,6 @@ export default function ChatMain() {
   };
 
   const handleLogout = async () => {
-    const supabase = createClient(
-      `https://${projectId}.supabase.co`,
-      publicAnonKey
-    );
     await supabase.auth.signOut();
     localStorage.removeItem("accessToken");
     localStorage.removeItem("userId");
