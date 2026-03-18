@@ -121,20 +121,24 @@ app.post("/make-server-81e39e7b/friends/request", async (c) => {
       return c.json({ error: 'Cannot add yourself as a friend' }, 400);
     }
 
-    // Check if already friends
+    // Check if already friends or request exists
     const existingFriendship = await kv.get(`friendship:${user.id}:${friend.id}`) || 
                                await kv.get(`friendship:${friend.id}:${user.id}`);
     
     if (existingFriendship) {
-      return c.json({ error: 'Already friends or request pending' }, 400);
+      if (existingFriendship.status === 'accepted') {
+        return c.json({ error: 'Already friends' }, 400);
+      } else {
+        return c.json({ error: 'Friend request already pending' }, 400);
+      }
     }
 
-    // Create friendship
+    // Create friend request (pending status)
     const friendshipId = `friendship:${user.id}:${friend.id}`;
     await kv.set(friendshipId, {
-      user1Id: user.id,
-      user2Id: friend.id,
-      status: 'accepted',
+      requesterId: user.id,
+      receiverId: friend.id,
+      status: 'pending',
       createdAt: new Date().toISOString()
     });
 
@@ -162,11 +166,14 @@ app.get("/make-server-81e39e7b/friends", async (c) => {
     const friendships = await kv.getByPrefix('friendship:');
     const friendIds: string[] = [];
 
+    // Only include accepted friendships
     friendships.forEach((f: any) => {
-      if (f.user1Id === user.id) {
-        friendIds.push(f.user2Id);
-      } else if (f.user2Id === user.id) {
-        friendIds.push(f.user1Id);
+      if (f.status === 'accepted') {
+        if (f.requesterId === user.id) {
+          friendIds.push(f.receiverId);
+        } else if (f.receiverId === user.id) {
+          friendIds.push(f.requesterId);
+        }
       }
     });
 
@@ -178,6 +185,156 @@ app.get("/make-server-81e39e7b/friends", async (c) => {
   } catch (error) {
     console.error('Get friends error:', error);
     return c.json({ error: 'Failed to get friends' }, 500);
+  }
+});
+
+// Get pending friend requests
+app.get("/make-server-81e39e7b/friends/requests", async (c) => {
+  try {
+    const accessToken = c.req.header('Authorization')?.split(' ')[1];
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+    if (!user?.id || authError) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const friendships = await kv.getByPrefix('friendship:');
+    const pendingRequests: any[] = [];
+
+    // Get requests sent to this user
+    for (const f of friendships) {
+      if (f.status === 'pending' && f.receiverId === user.id) {
+        const requester = await kv.get(`user:${f.requesterId}`);
+        if (requester) {
+          pendingRequests.push({
+            ...f,
+            requester
+          });
+        }
+      }
+    }
+
+    return c.json({ requests: pendingRequests });
+  } catch (error) {
+    console.error('Get friend requests error:', error);
+    return c.json({ error: 'Failed to get friend requests' }, 500);
+  }
+});
+
+// Accept friend request
+app.post("/make-server-81e39e7b/friends/accept", async (c) => {
+  try {
+    const accessToken = c.req.header('Authorization')?.split(' ')[1];
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+    if (!user?.id || authError) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { requesterId } = await c.req.json();
+
+    // Find the friend request
+    const friendshipId = `friendship:${requesterId}:${user.id}`;
+    const friendship = await kv.get(friendshipId);
+
+    if (!friendship) {
+      return c.json({ error: 'Friend request not found' }, 404);
+    }
+
+    if (friendship.status !== 'pending') {
+      return c.json({ error: 'Request already processed' }, 400);
+    }
+
+    // Update to accepted
+    await kv.set(friendshipId, {
+      ...friendship,
+      status: 'accepted',
+      acceptedAt: new Date().toISOString()
+    });
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Accept friend request error:', error);
+    return c.json({ error: 'Failed to accept friend request' }, 500);
+  }
+});
+
+// Decline friend request
+app.post("/make-server-81e39e7b/friends/decline", async (c) => {
+  try {
+    const accessToken = c.req.header('Authorization')?.split(' ')[1];
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+    if (!user?.id || authError) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { requesterId } = await c.req.json();
+
+    // Find and delete the friend request
+    const friendshipId = `friendship:${requesterId}:${user.id}`;
+    const friendship = await kv.get(friendshipId);
+
+    if (!friendship) {
+      return c.json({ error: 'Friend request not found' }, 404);
+    }
+
+    await kv.del(friendshipId);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Decline friend request error:', error);
+    return c.json({ error: 'Failed to decline friend request' }, 500);
+  }
+});
+
+// Remove friend
+app.post("/make-server-81e39e7b/friends/remove", async (c) => {
+  try {
+    const accessToken = c.req.header('Authorization')?.split(' ')[1];
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+    if (!user?.id || authError) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { friendId } = await c.req.json();
+
+    // Find and delete the friendship (check both directions)
+    const friendshipId1 = `friendship:${user.id}:${friendId}`;
+    const friendshipId2 = `friendship:${friendId}:${user.id}`;
+    
+    const friendship1 = await kv.get(friendshipId1);
+    const friendship2 = await kv.get(friendshipId2);
+
+    if (friendship1) {
+      await kv.del(friendshipId1);
+    } else if (friendship2) {
+      await kv.del(friendshipId2);
+    } else {
+      return c.json({ error: 'Friendship not found' }, 404);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Remove friend error:', error);
+    return c.json({ error: 'Failed to remove friend' }, 500);
   }
 });
 

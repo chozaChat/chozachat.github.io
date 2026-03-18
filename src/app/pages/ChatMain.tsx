@@ -9,7 +9,8 @@ import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Label } from "../components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { MessageCircle, Users, UserPlus, LogOut, Send, Plus } from "lucide-react";
+import { Badge } from "../components/ui/badge";
+import { MessageCircle, Users, UserPlus, LogOut, Send, Plus, UserMinus, Check, X, Bell } from "lucide-react";
 import { toast } from "sonner";
 
 interface User {
@@ -19,6 +20,14 @@ interface User {
 }
 
 interface Friend extends User {}
+
+interface FriendRequest {
+  requesterId: string;
+  receiverId: string;
+  status: string;
+  createdAt: string;
+  requester: User;
+}
 
 interface Group {
   id: string;
@@ -39,6 +48,7 @@ export default function ChatMain() {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedChat, setSelectedChat] = useState<{ type: 'friend' | 'group', id: string, name: string } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -48,6 +58,7 @@ export default function ChatMain() {
   const [selectedFriendsForGroup, setSelectedFriendsForGroup] = useState<string[]>([]);
   const [addFriendOpen, setAddFriendOpen] = useState(false);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [requestsOpen, setRequestsOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollIntervalRef = useRef<number>();
 
@@ -63,6 +74,7 @@ export default function ChatMain() {
     loadCurrentUser();
     loadFriends();
     loadGroups();
+    loadFriendRequests();
 
     // Poll for new messages every 2 seconds
     pollIntervalRef.current = window.setInterval(() => {
@@ -144,6 +156,23 @@ export default function ChatMain() {
       }
     } catch (error) {
       console.error("Failed to load messages:", error);
+    }
+  };
+
+  const loadFriendRequests = async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-81e39e7b/friends/requests`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+      const data = await response.json();
+      if (data.requests) {
+        setFriendRequests(data.requests);
+      }
+    } catch (error) {
+      console.error("Failed to load friend requests:", error);
     }
   };
 
@@ -281,6 +310,94 @@ export default function ChatMain() {
     );
   };
 
+  const handleAcceptFriendRequest = async (requesterId: string) => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-81e39e7b/friends/accept`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ requesterId }),
+        }
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || "Failed to accept friend request");
+        return;
+      }
+
+      toast.success("Friend request accepted!");
+      loadFriendRequests();
+      loadFriends();
+    } catch (error) {
+      console.error("Accept friend request error:", error);
+      toast.error("Failed to accept friend request");
+    }
+  };
+
+  const handleDeclineFriendRequest = async (requesterId: string) => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-81e39e7b/friends/decline`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ requesterId }),
+        }
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || "Failed to decline friend request");
+        return;
+      }
+
+      toast.success("Friend request declined!");
+      loadFriendRequests();
+    } catch (error) {
+      console.error("Decline friend request error:", error);
+      toast.error("Failed to decline friend request");
+    }
+  };
+
+  const handleRemoveFriend = async (friendId: string) => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-81e39e7b/friends/remove`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ friendId }),
+        }
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || "Failed to remove friend");
+        return;
+      }
+
+      toast.success("Friend removed!");
+      loadFriends();
+      if (selectedChat?.type === 'friend' && selectedChat.id.includes(friendId)) {
+        setSelectedChat(null);
+      }
+    } catch (error) {
+      console.error("Remove friend error:", error);
+      toast.error("Failed to remove friend");
+    }
+  };
+
   return (
     <div className="size-full flex bg-gray-50">
       {/* Sidebar */}
@@ -309,7 +426,7 @@ export default function ChatMain() {
           </TabsList>
 
           <TabsContent value="friends" className="flex-1 mt-0 overflow-hidden">
-            <div className="p-2">
+            <div className="p-2 space-y-2">
               <Dialog open={addFriendOpen} onOpenChange={setAddFriendOpen}>
                 <DialogTrigger asChild>
                   <Button className="w-full" variant="outline">
@@ -340,6 +457,67 @@ export default function ChatMain() {
                       <Button type="submit">Add Friend</Button>
                     </DialogFooter>
                   </form>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={requestsOpen} onOpenChange={setRequestsOpen}>
+                <DialogTrigger asChild>
+                  <Button className="w-full" variant="outline">
+                    <Bell className="size-4 mr-2" />
+                    Friend Requests
+                    {friendRequests.length > 0 && (
+                      <Badge className="ml-auto" variant="destructive">
+                        {friendRequests.length}
+                      </Badge>
+                    )}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Friend Requests</DialogTitle>
+                    <DialogDescription>
+                      {friendRequests.length === 0 ? "No pending requests" : `${friendRequests.length} pending request${friendRequests.length > 1 ? 's' : ''}`}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <ScrollArea className="max-h-96">
+                    {friendRequests.length === 0 ? (
+                      <div className="text-center text-gray-500 py-8">
+                        No friend requests
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {friendRequests.map((request) => (
+                          <div key={request.requesterId} className="flex items-center gap-3 p-3 border rounded-lg">
+                            <Avatar>
+                              <AvatarFallback className="bg-blue-600 text-white">
+                                {request.requester.name.charAt(0).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <div className="font-medium">{request.requester.name}</div>
+                              <div className="text-xs text-gray-500">{request.requester.email}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="icon"
+                                variant="default"
+                                onClick={() => handleAcceptFriendRequest(request.requesterId)}
+                              >
+                                <Check className="size-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="destructive"
+                                onClick={() => handleDeclineFriendRequest(request.requesterId)}
+                              >
+                                <X className="size-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
                 </DialogContent>
               </Dialog>
             </div>
