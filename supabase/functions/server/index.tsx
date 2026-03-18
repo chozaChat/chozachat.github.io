@@ -96,34 +96,47 @@ app.get("/make-server-81e39e7b/user/:userId", async (c) => {
 // Send friend request
 app.post("/make-server-81e39e7b/friends/request", async (c) => {
   try {
+    console.log("Friend request - Starting");
     const accessToken = c.req.header('Authorization')?.split(' ')[1];
+    console.log("Friend request - Access token present:", !!accessToken);
+    
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
     
     const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+    console.log("Friend request - User auth:", user?.id, "Error:", authError);
+    
     if (!user?.id || authError) {
+      console.error("Friend request - Unauthorized:", authError);
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const { friendEmail } = await c.req.json();
+    const body = await c.req.json();
+    console.log("Friend request - Request body:", body);
+    const { friendEmail } = body;
 
     // Find friend by email
     const allUsers = await kv.getByPrefix('user:');
+    console.log("Friend request - Total users found:", allUsers.length);
     const friend = allUsers.find((u: any) => u.email === friendEmail);
+    console.log("Friend request - Friend found:", !!friend, friend?.email);
 
     if (!friend) {
+      console.error("Friend request - User not found:", friendEmail);
       return c.json({ error: 'User not found' }, 404);
     }
 
     if (friend.id === user.id) {
+      console.error("Friend request - Cannot add yourself");
       return c.json({ error: 'Cannot add yourself as a friend' }, 400);
     }
 
     // Check if already friends or request exists
     const existingFriendship = await kv.get(`friendship:${user.id}:${friend.id}`) || 
                                await kv.get(`friendship:${friend.id}:${user.id}`);
+    console.log("Friend request - Existing friendship:", !!existingFriendship, existingFriendship?.status);
     
     if (existingFriendship) {
       if (existingFriendship.status === 'accepted') {
@@ -135,17 +148,20 @@ app.post("/make-server-81e39e7b/friends/request", async (c) => {
 
     // Create friend request (pending status)
     const friendshipId = `friendship:${user.id}:${friend.id}`;
-    await kv.set(friendshipId, {
+    const friendshipData = {
       requesterId: user.id,
       receiverId: friend.id,
       status: 'pending',
       createdAt: new Date().toISOString()
-    });
+    };
+    console.log("Friend request - Creating friendship:", friendshipId, friendshipData);
+    await kv.set(friendshipId, friendshipData);
+    console.log("Friend request - Success");
 
     return c.json({ success: true, friend });
   } catch (error) {
     console.error('Friend request error:', error);
-    return c.json({ error: 'Failed to send friend request' }, 500);
+    return c.json({ error: `Failed to send friend request: ${error.message}` }, 500);
   }
 });
 
